@@ -1,0 +1,143 @@
+// This script runs your experiment inside a "canvas" element provided by Qualtrics JS.
+// We'll define functions that the Qualtrics code will call.
+
+// Global variables
+let currentTrial = 0;
+let totalTrials = 5;
+let participantResponses = [];
+let trialStartTime = null;
+let mouseMovements = [];
+
+// Example data
+const statements = [
+  { text: "Paris is the capital of France.", truth: true },
+  { text: "The Pacific is the largest ocean.", truth: true },
+  { text: "2+2=5.", truth: false },
+  { text: "The Earth is flat.", truth: false },
+  { text: "Cats are mammals.", truth: true }
+];
+
+// Container element provided by Qualtrics script
+let containerDiv = null;
+
+// Called by Qualtrics script to start the experiment
+function startExperiment(container, onFinish, logger) {
+  containerDiv = container;
+  
+  // Setup UI
+  containerDiv.innerHTML = `
+    <h2>Predictive Inference Task</h2>
+    <div id="trial-number"></div>
+    <div id="statement-container"><p id="statement-text"></p></div>
+    <div id="response-container">
+      <p>Is this statement True or False?</p>
+      <button id="true-button">True</button>
+      <button id="false-button">False</button>
+    </div>
+    <div id="confidence-container" style="display:none;">
+      <p>How confident are you?</p>
+      <input type="range" id="confidence-slider" min="0" max="100" value="50">
+      <span id="confidence-value">50</span>%
+    </div>
+    <div id="fact-check" style="display:none;font-weight:bold;"></div>
+    <button id="next-button" style="display:none;">Next</button>
+  `;
+
+  // Event listeners
+  containerDiv.querySelector('#true-button').addEventListener('click', () => handleChoice(true));
+  containerDiv.querySelector('#false-button').addEventListener('click', () => handleChoice(false));
+  containerDiv.querySelector('#confidence-slider').addEventListener('input', updateConfidenceDisplay);
+  containerDiv.querySelector('#next-button').addEventListener('click', () => nextTrial(onFinish, logger));
+
+  document.addEventListener('mousemove', recordMouseMovement);
+
+  startTrial();
+}
+
+function startTrial() {
+  if (currentTrial >= totalTrials) return;
+
+  mouseMovements = [];
+  trialStartTime = performance.now();
+
+  // Reset UI
+  containerDiv.querySelector('#confidence-container').style.display = 'none';
+  containerDiv.querySelector('#fact-check').style.display = 'none';
+  containerDiv.querySelector('#next-button').style.display = 'none';
+  
+  containerDiv.querySelector('#true-button').disabled = false;
+  containerDiv.querySelector('#false-button').disabled = false;
+
+  // Update trial number
+  containerDiv.querySelector('#trial-number').textContent = `Trial ${currentTrial+1} of ${totalTrials}`;
+  
+  // Show statement
+  containerDiv.querySelector('#statement-text').textContent = statements[currentTrial].text;
+}
+
+let chosenTruth = null;
+function handleChoice(choice) {
+  chosenTruth = choice;
+  containerDiv.querySelector('#true-button').disabled = true;
+  containerDiv.querySelector('#false-button').disabled = true;
+
+  containerDiv.querySelector('#confidence-container').style.display = 'block';
+  containerDiv.querySelector('#next-button').style.display = 'block';
+}
+
+function updateConfidenceDisplay() {
+  const val = containerDiv.querySelector('#confidence-slider').value;
+  containerDiv.querySelector('#confidence-value').textContent = val;
+}
+
+function nextTrial(onFinish, logger) {
+  // Gather data for this trial
+  const confidence = parseInt(containerDiv.querySelector('#confidence-slider').value, 10);
+  const rt = performance.now() - trialStartTime;
+  // Random correctness for demo (replace with your distribution logic)
+  const correct = Math.random() < 0.8;
+
+  // Show fact-check
+  const factCheckEl = containerDiv.querySelector('#fact-check');
+  if (correct) {
+    factCheckEl.textContent = "CORRECT!";
+    factCheckEl.style.color = 'green';
+  } else {
+    factCheckEl.textContent = "INCORRECT!";
+    factCheckEl.style.color = 'red';
+  }
+  factCheckEl.style.display = 'block';
+
+  // Store response
+  participantResponses.push({
+    trial: currentTrial+1,
+    statement: statements[currentTrial].text,
+    response: chosenTruth,
+    confidence: confidence,
+    correctness: correct,
+    responseTime: rt,
+    mouseMovements: mouseMovements.slice()
+  });
+
+  currentTrial++;
+
+  if (currentTrial < totalTrials) {
+    // Proceed after a short delay
+    setTimeout(() => startTrial(), 1000);
+  } else {
+    // Experiment finished
+    const jsonData = JSON.stringify(participantResponses);
+    if (logger) logger(jsonData); // save data to Qualtrics
+    onFinish(); // advance Qualtrics
+  }
+}
+
+function recordMouseMovement(e) {
+  if (trialStartTime) {
+    mouseMovements.push({
+      t: performance.now() - trialStartTime,
+      x: e.clientX,
+      y: e.clientY
+    });
+  }
+}
